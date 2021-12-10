@@ -1,0 +1,6 @@
+Options All
+
+AddType application/x-httpd-cgi .sh
+
+AddHandler cgi-script .sh
+AddHandler cgi-script .sh
