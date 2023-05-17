@@ -27,7 +27,7 @@
         muteButtonClass: 'tubular-mute',
         volumeUpClass: 'tubular-volume-up',
         volumeDownClass: 'tubular-volume-down',
-        increaseVolumeBy: 10,
+        increaseVolumeBy: 100,
         start: 0
     };
 
