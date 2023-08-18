@@ -1,0 +1,297 @@
+<?php
+//Cache sistemi ayarlanıyor
+$cache =0;
+if($cache == 1){
+    $cacheStatus = true;
+    $forceCompile = false;
+    $cacheTime = 3600;
+} else {
+    $cacheStatus = false;
+    $forceCompile = true;
+    $cacheTime = 3600;
+}
+//Veritabanı Bilgileri
+define("SITE_URL", "http://www.bakirkoy.bel.tr/");
+define("MYSQL_HOST","localhost");
+define("MYSQL_USER","bakirkoy_user");
+define("MYSQL_PASS","bFgAuscD1ERR");
+define("MYSQL_DB","bakirkoy_2016");
+//Saat dilimi ayarlanıyor
+date_default_timezone_set('Europe/Istanbul');
+  ///*****IP ADRES ALINILIYOR**************///
+    if (!empty($_SERVER['HTTP_CLIENT_IP'])) {
+        $ip = $_SERVER['HTTP_CLIENT_IP'];
+    } elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+        $ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
+    } else {
+        $ip = $_SERVER['REMOTE_ADDR'];
+    }
+    ///*****IP ADRES ALINILIYOR LAST**************///
+    $_server_host   = $_SERVER[HTTP_HOST];
+    /*if($ip=='213.14.67.218'):
+        if(strstr($_server_host,"admin")):
+            include '../log/index.php';
+        else:
+            include 'log/index.php';
+        endif;
+    endif;*/
+class litera{
+    //Veritabanı bağlantısı kurar
+    function baglan(){
+        global $baglanti;
+        $baglanti = new mysqli(MYSQL_HOST, MYSQL_USER, MYSQL_PASS, MYSQL_DB);
+        $baglanti->set_charset("utf8");
+    }
+    
+    //Veritabanı bağlantısını kapatır
+    function kapat(){
+        global $baglanti;
+        mysqli_close($baglanti);
+    }
+    
+    //Veritabanından tek satır veri alır
+    function tekSatir($query){
+        global $baglanti;
+        $sorgu = $baglanti->query($query);
+        $satir = $sorgu->fetch_assoc();
+        return $satir;
+    }
+    
+    //Veritabanından çok satır veri alır
+    function cokSatir($query){
+        global $baglanti;
+        $sorgu = $baglanti->query($query);
+        while($gecici = $sorgu->fetch_assoc()){ $satir[] = $gecici;}
+        return $satir;
+    }
+    
+    //Veritabanındaki satır sayısını döndürür
+    function toplamSatir($query){
+        global $baglanti;
+        $sorgu = $baglanti->query($query);
+        $toplam = $sorgu->num_rows;
+        return $toplam;
+    }
+    
+    //Veritabanına kayıt ekler
+    function kayitEkle($data,$table){
+        global $baglanti;
+        $names = '';
+        $values = '';
+        foreach($data as $name=>$value){
+            $names .= "".$name.",";
+            $values .= "'".$value."',";    
+        }
+        $names = substr($names,0,-1);
+        $values = substr($values,0,-1);    
+        $sorgu = $baglanti->query("INSERT INTO ".$table." (".$names.") VALUES (".$values.")");
+        return $baglanti->insert_id;
+    }
+    
+    //Kullanıcının ip adresini alan fonksiyon
+    function ipAl(){
+        if(getenv("HTTP_CLIENT_IP")){
+            $ip = getenv("HTTP_CLIENT_IP");
+        } elseif(getenv("HTTP_X_FORWARDED_FOR")){
+            $ip = getenv("HTTP_X_FORWARDED_FOR");
+            if(strstr($ip, ',')){
+                $tmp = explode (',', $ip);
+            $ip = trim($tmp[0]);
+            }
+        } else {
+            $ip = getenv("REMOTE_ADDR");
+        }
+        return $ip;
+    }
+    
+    //Gün ve ay isimlerini türkçeleştirir
+    function turkceTarih($tur,$arg,$format){
+        $arg = ltrim($arg,"0");
+        $aylar = array(1=>array("OCK","OCAK"),2=>array("ŞUB","ŞUBAT"),3=>array("MAR","MART"),4=>array("NİS","NİSAN"),5=>array("MAY","MAYIS"),6=>array("HAZ","HAZİRA
+N"),7=>array("TEM","TEMMUZ"),8=>array("AĞU","AĞUSTOS"),9=>array("EYL","EYLÜL"),10=>array("EKİ","EKİM"),11=>array("KAS","KASIM"),12=>array("ARA","ARALIK"));
+        $gunler = array(1=>array("PZT","PAZARTESİ"),2=>array("SAL","SALI"),3=>array("ÇAR","ÇARŞAMBA"),4=>array("PER","PERŞEMBE"),5=>array("CUM","CUMA"),    6=>arra
+y("CMT","CUMARTESİ"),7=>array("PAZ","PAZAR"));
+        
+        switch($tur){
+            case 1:
+                return $aylar[$arg][$format];
+                break;
+            case 2:
+                return $gunler[$arg][$format];
+                break;
+            default:
+                return "HATALI FORMAT";
+        }
+    }
+    
+    //Metni istenilen karakter ile bölerek istenilen bölümü döndürür
+    function metinBol($metin,$arg,$bolum){
+        $explode = explode($arg,$metin);
+        return $explode[$bolum];
+    }
+    
+    //Sef uyumlu link oluşturur
+    function linkOlustur($arg){
+        $find = array('Ç', 'Ş', 'Ğ', 'Ü','U', 'İ','I', 'Ö','O', 'ç', 'ş', 'ğ', 'ü', 'ö', 'ı', '+', '#','.');
+        $replace = array('c', 's', 'g', 'u','u', 'i','i', 'o', 'o', 'c', 's', 'g', 'u', 'o', 'i', 'plus', 'sharp','');
+        $arg = strtolower(str_replace($find, $replace, $arg));
+        $arg = preg_replace("@[^A-Za-z0-9\-_\.\+]@i", ' ', $arg);
+        $arg = trim(preg_replace('/\s+/', ' ', $arg));
+        $arg = str_replace(' ', '-', $arg);
+        return $arg;
+    }
+    
+    //Portala özel yazılan meclis karar türünü döndüren fonksiyon
+    function kararTuru($arg){
+        switch($arg){
+            case 1: return "MECLİS GÜNDEMİ"; break;
+            case 2: return "ZABIT ÖZETLERİ"; break;
+            case 3: return "KARAR ÖZETLERİ"; break;
+            default: return "TANIMSIZ DOSYA"; break;
+        }
+    }
+    
+    //Temanın özelliği olan ilk harfi büyük yapan fonksiyon
+    function ilkHarf($arg){
+    }
+    //Sql ile sorgulatmadan önce bu fonksiyon ile değer süzülür
+    function sqlGuvenlik($metin,$harf,$rakam,$diger){
+        global $baglanti;
+        if($metin==""){ return $metin;}
+        for($i=0; $i<strlen($metin); $i++){
+            $karakter=substr($metin,$i,1);    
+            $puan=0;
+            if((preg_match("/^[a-zA-ZöçşğüıÖÇŞĞÜİ]+$/",$karakter) and $harf==1)){
+               $puan++; 
+            }else if((preg_match("/^[0-9]+$/",$karakter) and $rakam==1)){
+               $puan++; 
+            }else if(@in_array($karakter, $diger)==true and $puan==0){
+                $puan++;
+            }
+            if($puan!=0){ $y_metin.=$karakter; } 
+        }
+        $y_metin = $baglanti->real_escape_string($y_metin);
+        return $y_metin;
+    }
+    
+    //Türkçe karakter sorunu olmadan tüm harfleri küçük harf yapar
+    function tr_strtolower($text){
+        $search=array("Ç","İ","I","Ğ","Ö","Ş","Ü");
+        $replace=array("ç","i","ı","ğ","ö","ş","ü");
+        $text=str_replace($search,$replace,$text);
+        $text=strtolower($text);
+        return $text;
+    }
+    
+    //Organizasyon şeması oluşturmak için kullanılan dizileri düzenleyen fonksiyon
+    function diziOlustur(array $elements, $parentId = 0) {
+        global $litera;
+        $branch = array();
+        foreach ($elements as $element) {
+            if ($element['cid'] == $parentId) {
+                $children = $litera->diziOlustur($elements, $element['id']);
+                if ($children) {
+                    $element['children'] = $children;
+                }
+                $branch[] = $element;
+            }
+        }
+        return $branch;
+    }
+    
+    //Organizasyon şeması yaparken kullanılan fonksiyonun verilerini gösterim için hazırlar
+    function diziListele($array) {
+        global $litera;
+        if (empty($array)) return '';
+        $output = '<ul>';
+        foreach ($array as $key => $subArray) {
+            $output .= '<li>';
+            if($subArray["link_tr"] != ""){$output .= "<a href='".$subArray["link_tr"]."'>";} else {$output .= "<a href='#'>";}
+            $output .= $subArray["baslik_tr"];
+            if($subArray["link_tr"] != ""){$output .= "</a>";} else {$output .= "</a>";}
+            $output .= $litera->diziListele($subArray["children"]) . '</li>';
+        }
+        $output .= '</ul>';
+        return $output;
+    }
+    
+    //Hata gösterim fonksiyonu
+    function hataGoster($arg){
+        if($arg == 1){
+            error_reporting(E_ALL);
+            ini_set("display_errors", 1);
+        }
+    }
+    
+    //Veritabanından sosyal medya hesaplarını çeker
+    function sosyalMedya(){
+        
+        global $baglanti;
+        $sorgu = $baglanti->query("SELECT facebook_tr,twitter_tr,pinterest_tr,google_plus_tr,youtube_tr FROM web_social_media");
+        $satir = $sorgu->fetch_assoc();
+        
+        if($satir["facebook_tr"] != ""){ $sonuc .= '<a href="'.$satir["facebook_tr"].'" target="_blank"><i class="fa fa-facebook"></i></a>';}
+        if($satir["twitter_tr"] != ""){ $sonuc .= '<a href="'.$satir["twitter_tr"].'" target="_blank"><i class="fa fa-twitter"></i></a>';}
+        if($satir["pinterest_tr"] != ""){ $sonuc .= '<a href="'.$satir["pinterest_tr"].'" target="_blank"><i class="fa fa-pinterest"></i></a>';}
+        if($satir["google_plus_tr"] != ""){ $sonuc .= '<a href="'.$satir["google_plus_tr"].'" target="_blank"><i class="fa fa-google"></i></a>';}
+        if($satir["youtube_tr"] != ""){ $sonuc .= '<a href="'.$satir["youtube_tr"].'" target="_blank"><i class="fa fa-youtube"></i></a>';}
+        
+        return $sonuc;
+    }
+    //Tüm post ve get verilerini sql açıklarına karşı süzer
+    function guvenlik(){
+        ## yasak kelimeler ##
+        $ysk=array();
+        $ysk[]="EXTRACTVALUE";
+        $ysk[]="IFNULL";
+        $ysk[]="table_schema";
+        $ysk[]="INFORMATION_SCHEMA";        
+        $ysk[]="UNION";        
+        $ysk[]="SELECT";
+        ## yasak kelimeler ##
+    
+    
+        foreach ($_GET as $key => $value){
+            if (@preg_match("/[\-]{2,}|[;]|[']|[\\\*]/", $_GET[$key])){
+            $_GET[$key]=ereg_replace("--","\--",$_GET[$key]);
+            $_GET[$key]=ereg_replace(";","\;",$_GET[$key]);
+            $_GET[$key]=ereg_replace("'","'",$_GET[$key]);
+            $_GET[$key]=ereg_replace("\"","\\\"",$_GET[$key]);
+            $_GET[$key]=ereg_replace("\*","\\\*",$_GET[$key]);
+            }
+            
+            for($i=0; $i<count($ysk); $i++){
+                if(eregi($ysk[$i],$_GET[$key])){
+                    if($key=="id"){
+                    $pt=explode(" ",$_GET[$key]);
+                    $_GET[$key]=$pt[0];
+                    }else{
+                    $_GET[$key]="";
+                    }
+                }
+            }
+            
+        }
+        
+        foreach ($_POST as $key => $value){
+            if (@preg_match("/[\-]{2,}|[;]|[']|[\\\*]/", $_POST[$key])){
+            $_POST[$key]=ereg_replace("--","\--",$_POST[$key]);
+            $_POST[$key]=ereg_replace(";","\;",$_POST[$key]);
+            $_POST[$key]=ereg_replace("'","'",$_POST[$key]);
+            $_POST[$key]=ereg_replace("\"","\\\"",$_POST[$key]);
+            $_POST[$key]=ereg_replace("\*","\\\*",$_POST[$key]);
+            }
+            for($i=0; $i<count($ysk); $i++){
+                if(eregi($ysk[$i],$_POST[$key])){
+                    if($key=="id"){
+                    $pt=explode(" ",$_POST[$key]);
+                    $_POST[$key]=$pt[0];
+                    }else{
+                    $_POST[$key]="";
+                    }
+                }
+            }            
+        }
+    }    
+}
+?>
