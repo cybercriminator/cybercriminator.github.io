@@ -7,14 +7,28 @@ $BASE = '/';
 $ROOT = __DIR__;
 $MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
  
-function csrf_token(){ if(empty($_SESSION['csrf_token'])) $_SESSION['csrf_token']=bin2hex(random_bytes(16)); return $_SESSION['csrf_token']; }
+// random_bytes PHP 7 altı için uyumluluk kontrolü
+function generate_csrf_token() {
+    if(empty($_SESSION['csrf_token'])) {
+        if (function_exists('random_bytes')) {
+            $_SESSION['csrf_token'] = bin2hex(random_bytes(16));
+        } else {
+            $_SESSION['csrf_token'] = bin2hex(openssl_random_pseudo_bytes(16));
+        }
+    }
+    return $_SESSION['csrf_token'];
+}
+
 function check_csrf(){ 
     $session_token = isset($_SESSION['csrf_token']) ? $_SESSION['csrf_token'] : '';
-    if(empty($_POST['csrf']) || $_POST['csrf'] !== $session_token) {
+    $post_token = isset($_POST['csrf']) ? $_POST['csrf'] : '';
+    if(empty($post_token) || $post_token !== $session_token) {
         die('Geçersiz CSRF token.'); 
     }
 }
+
 function h($s){ return htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
+
 function is_within_base($base, $path){
     $b = realpath($base); $p = realpath($path);
     if($b===false||$p===false) return false;
@@ -22,16 +36,17 @@ function is_within_base($base, $path){
 }
  
 if(isset($_POST['action']) && $_POST['action']==='login'){
-    $pw = $_POST['password'] ?? '';
+    $pw = isset($_POST['password']) ? $_POST['password'] : '';
     if(password_verify($pw, $PASSWORD_HASH)){
         $_SESSION['logged_in'] = true;
-        csrf_token();
+        generate_csrf_token();
         header('Location: '.$_SERVER['PHP_SELF']);
         exit;
     } else {
         $error = 'Wrong password.';
     }
 }
+
 if(isset($_GET['logout'])){
     session_destroy();
     header('Location: '.$_SERVER['PHP_SELF']);
@@ -67,7 +82,7 @@ button[type=submit]:hover{background:#0c1e3a;}
 }
  
 /* ---- CURRENT DIR ---- */
-$requested = $_GET['file'] ?? '';
+$requested = isset($_GET['file']) ? $_GET['file'] : '';
  
 if($requested !== '' && $requested[0] === '/'){
     $currentAbs = realpath($requested);
@@ -80,9 +95,11 @@ if(realpath($BASE) !== '/' && strpos($currentAbs, realpath($BASE)) !== 0) $curre
 $current = $currentAbs;
  
 /* ---- DELETE ---- */
-if($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['do'] ?? '')==='delete'){
+$post_do = isset($_POST['do']) ? $_POST['do'] : '';
+if($_SERVER['REQUEST_METHOD']==='POST' && $post_do ==='delete'){
     check_csrf();
-    $abs = realpath($_POST['path'] ?? '');
+    $path_to_del = isset($_POST['path']) ? $_POST['path'] : '';
+    $abs = realpath($path_to_del);
     if(!$abs || !is_within_base($BASE, $abs)) $msg='Invalid path.';
     elseif(is_file($abs)) $msg = unlink($abs) ? 'Deleted.' : 'Could not delete.';
     elseif(is_dir($abs)) $msg = @rmdir($abs) ? 'Folder deleted.' : 'Could not delete (not empty?).';
@@ -90,10 +107,10 @@ if($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['do'] ?? '')==='delete'){
 }
  
 /* ---- RENAME / NEW FOLDER ---- */
-if($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['do'] ?? '')==='rename'){
+if($_SERVER['REQUEST_METHOD']==='POST' && $post_do ==='rename'){
     check_csrf();
-    $old = $_POST['old'] ?? '';
-    $new = $_POST['new'] ?? '';
+    $old = isset($_POST['old']) ? $_POST['old'] : '';
+    $new = isset($_POST['new']) ? $_POST['new'] : '';
     if($old === ''){
         if(is_dir($new)) $msg='Already exists.';
         elseif(mkdir($new, 0755, true)) $msg='Folder created.';
@@ -106,9 +123,10 @@ if($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['do'] ?? '')==='rename'){
 }
  
 /* ---- UPLOAD ---- */
-if($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['do'] ?? '')==='upload'){
+if($_SERVER['REQUEST_METHOD']==='POST' && $post_do ==='upload'){
     check_csrf();
-    $absDest = realpath($_POST['dest'] ?? '');
+    $dest_path = isset($_POST['dest']) ? $_POST['dest'] : '';
+    $absDest = realpath($dest_path);
     if(!$absDest || !is_dir($absDest) || !is_within_base($BASE, $absDest)) $msg='Invalid destination.';
     elseif(!empty($_FILES['file']) && $_FILES['file']['error']===UPLOAD_ERR_OK){
         if($_FILES['file']['size'] > $MAX_UPLOAD_SIZE) $msg='File too large.';
@@ -116,22 +134,28 @@ if($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['do'] ?? '')==='upload'){
             $target = $absDest.DIRECTORY_SEPARATOR.basename($_FILES['file']['name']);
             $msg = move_uploaded_file($_FILES['file']['tmp_name'], $target) ? 'Uploaded.' : 'Upload failed.';
         }
-    } else $msg='Upload error: '.($_FILES['file']['error'] ?? '?');
+    } else {
+        $err_code = isset($_FILES['file']['error']) ? $_FILES['file']['error'] : '?';
+        $msg='Upload error: '.$err_code;
+    }
 }
  
 /* ---- SAVE (edit) ---- */
-if($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['do'] ?? '')==='save'){
+if($_SERVER['REQUEST_METHOD']==='POST' && $post_do ==='save'){
     check_csrf();
-    $abs = realpath($_POST['path'] ?? '');
+    $edit_path_post = isset($_POST['path']) ? $_POST['path'] : '';
+    $abs = realpath($edit_path_post);
+    $content_post = isset($_POST['content']) ? $_POST['content'] : '';
     if(!$abs || !is_within_base($BASE, $abs) || !is_file($abs) || !is_writable($abs)) $msg='Invalid file or not writable.';
-    else $msg = file_put_contents($abs, $_POST['content'] ?? '')!==false ? 'Saved.' : 'Save error.';
+    else $msg = file_put_contents($abs, $content_post)!==false ? 'Saved.' : 'Save error.';
 }
  
 /* ---- JUMP ---- */
-if($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='jump'){
+$post_action = isset($_POST['action']) ? $_POST['action'] : '';
+if($_SERVER['REQUEST_METHOD']==='POST' && $post_action ==='jump'){
     check_csrf();
-    $jump = trim($_POST['jump'] ?? '');
-    $absJump = realpath($jump);
+    $jump_path = isset($_POST['jump']) ? trim($_POST['jump']) : '';
+    $absJump = realpath($jump_path);
     if($absJump && is_dir($absJump) && is_within_base($BASE, $absJump)){
         header('Location: ?file='.urlencode($absJump));
         exit;
@@ -194,7 +218,6 @@ hr{border:none;border-top:1px solid var(--border);margin:14px 0;}
   <div class="header">
     <div class="brand">G - B - L</div>
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-      <!-- Header breadcrumb (tıklanabilir yol) -->
       <div class="breadcrumb">
         <?php
         $pathParts = explode('/', trim($current, '/'));
@@ -226,7 +249,7 @@ hr{border:none;border-top:1px solid var(--border);margin:14px 0;}
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         <?php
         $parentAbs = dirname($current);
-        $atBase = ($current === realpath($BASE) || $parentAbs === $current || $parentAbs === $current);
+        $atBase = ($current === realpath($BASE) || $parentAbs === $current);
         if(!$atBase):
         ?>
         <a class="btn-light" href="?file=<?php echo urlencode($parentAbs); ?>"
@@ -239,16 +262,15 @@ hr{border:none;border-top:1px solid var(--border);margin:14px 0;}
       <div class="row">
         <form method="post" style="display:flex;gap:8px;align-items:center;">
           <input type="hidden" name="action" value="jump">
-          <input type="hidden" name="csrf" value="<?php echo h(csrf_token()); ?>">
+          <input type="hidden" name="csrf" value="<?php echo h(generate_csrf_token()); ?>">
           <input class="input" name="jump" placeholder="absolute path" value="<?php echo h($current); ?>" style="width:280px;">
           <button class="btn" type="submit">go</button>
         </form>
       </div>
     </div>
  
-    <!-- FILE LIST -->
     <?php
-    $items = glob($current.DIRECTORY_SEPARATOR.'*') ?: [];
+    $items = glob($current.DIRECTORY_SEPARATOR.'*') ?: array();
     usort($items, function($a,$b){ return strcasecmp(basename($a),basename($b)); });
     foreach($items as $file):
     ?>
@@ -269,25 +291,16 @@ hr{border:none;border-top:1px solid var(--border);margin:14px 0;}
         <?php endif; ?>
       </div>
       <div class="controls">
+        <form method="post" style="display:inline;">
+          <input type="hidden" name="do" value="delete">
+          <input type="hidden" name="path" value="<?php echo h($file); ?>">
+          <input type="hidden" name="csrf" value="<?php echo h(generate_csrf_token()); ?>">
+          <button class="btn-light" onclick="return confirm('Delete?')">delete</button>
+        </form>
         <?php if(is_file($file)): ?>
-          <form method="post" style="display:inline;">
-            <input type="hidden" name="do" value="delete">
-            <input type="hidden" name="path" value="<?php echo h($file); ?>">
-            <input type="hidden" name="csrf" value="<?php echo h(csrf_token()); ?>">
-            <button class="btn-light" onclick="return confirm('Delete file?')">delete</button>
-          </form>
           <button class="btn-light" onclick="location.href='?file=<?php echo urlencode($file); ?>&edit=1'">edit</button>
-          <button class="btn-light" onclick="showRename('<?php echo h(addslashes($file)); ?>')">rename</button>
-        <?php else: ?>
-          <form method="post" style="display:inline;">
-            <input type="hidden" name="do" value="delete">
-            <input type="hidden" name="path" value="<?php echo h($file); ?>">
-            <input type="hidden" name="csrf" value="<?php echo h(csrf_token()); ?>">
-            <button class="btn-light" onclick="return confirm('Delete folder?')">delete</button>
-          </form>
-          <button class="btn-light" onclick="location.href='?file=<?php echo urlencode($file); ?>'">open</button>
-          <button class="btn-light" onclick="showRename('<?php echo h(addslashes($file)); ?>')">rename</button>
         <?php endif; ?>
+        <button class="btn-light" onclick="showRename('<?php echo h(addslashes($file)); ?>')">rename</button>
       </div>
     </div>
     <?php endforeach; ?>
@@ -295,37 +308,34 @@ hr{border:none;border-top:1px solid var(--border);margin:14px 0;}
     <hr>
  
     <div style="display:flex;gap:18px;flex-wrap:wrap;">
-      <!-- New Folder -->
       <div style="min-width:260px;">
         <h4>new folder</h4>
         <form method="post">
           <input type="hidden" name="do" value="rename">
           <input type="hidden" name="old" value="">
-          <input type="hidden" name="csrf" value="<?php echo h(csrf_token()); ?>">
+          <input type="hidden" name="csrf" value="<?php echo h(generate_csrf_token()); ?>">
           <input type="text" name="new" class="input" placeholder="<?php echo h($current); ?>/foldername" style="width:100%;">
           <div style="margin-top:8px;"><button class="btn" type="submit">create</button></div>
         </form>
       </div>
  
-      <!-- Upload -->
       <div style="min-width:320px;">
         <h4>upload</h4>
         <form method="post" enctype="multipart/form-data">
           <input type="hidden" name="do" value="upload">
           <input type="hidden" name="dest" value="<?php echo h($current); ?>">
-          <input type="hidden" name="csrf" value="<?php echo h(csrf_token()); ?>">
+          <input type="hidden" name="csrf" value="<?php echo h(generate_csrf_token()); ?>">
           <input type="file" name="file" style="color:var(--text);font-size:13px;"><br>
           <small class="small">max <?php echo round($MAX_UPLOAD_SIZE/1024/1024,0); ?> MB</small>
           <div style="margin-top:8px;"><button class="btn" type="submit">upload</button></div>
         </form>
       </div>
  
-      <!-- Rename box -->
       <div id="renameBox" style="display:none;min-width:320px;">
         <h4>rename / move</h4>
         <form method="post">
           <input type="hidden" name="do" value="rename">
-          <input type="hidden" name="csrf" value="<?php echo h(csrf_token()); ?>">
+          <input type="hidden" name="csrf" value="<?php echo h(generate_csrf_token()); ?>">
           <input type="hidden" name="old" id="renameOld" value="">
           <input type="text" name="new" id="renameNew" class="input" placeholder="new absolute path" style="width:100%;">
           <div style="margin-top:8px;">
@@ -336,14 +346,13 @@ hr{border:none;border-top:1px solid var(--border);margin:14px 0;}
       </div>
     </div>
  
-    <!-- Editor -->
     <?php if($editContent !== null): ?>
     <div style="margin-top:18px;">
       <h4>editing: <?php echo h($editPath); ?></h4>
       <form method="post">
         <input type="hidden" name="do" value="save">
         <input type="hidden" name="path" value="<?php echo h($editPath); ?>">
-        <input type="hidden" name="csrf" value="<?php echo h(csrf_token()); ?>">
+        <input type="hidden" name="csrf" value="<?php echo h(generate_csrf_token()); ?>">
         <textarea name="content"><?php echo h($editContent); ?></textarea><br>
         <div style="margin-top:8px;display:flex;gap:8px;">
           <button class="btn" type="submit">save</button>
